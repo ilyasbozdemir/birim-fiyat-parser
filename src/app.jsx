@@ -22,7 +22,8 @@ import {
   FileCode2,
   Table as TableIcon,
   Layers,
-  Check
+  Check,
+  Terminal
 } from 'lucide-react';
 
 export default function App() {
@@ -290,40 +291,51 @@ export default function App() {
               </div>
             </div>
 
-            {data && data.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Tooltip.Root>
-                  <Tooltip.Trigger asChild>
-                    <button
-                      onClick={copyToClipboard}
-                      className="px-3 py-2 text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition flex items-center gap-2 shadow-sm"
-                    >
-                      <Copy className="w-4 h-4 text-indigo-400" />
-                      Panoya Kopyala
-                    </button>
-                  </Tooltip.Trigger>
-                  <Tooltip.Content className="bg-slate-800 text-white text-xs px-2.5 py-1.5 rounded-md border border-slate-700 shadow-xl">
-                    Excel'e doğrudan yapıştırmak için TSV formatında kopyalar
-                  </Tooltip.Content>
-                </Tooltip.Root>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => window.api?.toggleDevTools?.()}
+                className="px-3 py-2 text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 rounded-xl transition flex items-center gap-1.5 shadow-sm"
+                title="Geliştirici Konsolunu (F12) Aç/Kapat"
+              >
+                <Terminal className="w-4 h-4 text-indigo-400" />
+                F12 Konsol
+              </button>
 
-                <button
-                  onClick={exportToCSV}
-                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition flex items-center gap-2 shadow-lg shadow-emerald-600/20"
-                >
-                  <Download className="w-4 h-4" />
-                  CSV İndir
-                </button>
+              {data && data.length > 0 && (
+                <>
+                  <Tooltip.Root>
+                    <Tooltip.Trigger asChild>
+                      <button
+                        onClick={copyToClipboard}
+                        className="px-3 py-2 text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition flex items-center gap-2 shadow-sm"
+                      >
+                        <Copy className="w-4 h-4 text-indigo-400" />
+                        Panoya Kopyala
+                      </button>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content className="bg-slate-800 text-white text-xs px-2.5 py-1.5 rounded-md border border-slate-700 shadow-xl">
+                      Excel'e doğrudan yapıştırmak için TSV formatında kopyalar
+                    </Tooltip.Content>
+                  </Tooltip.Root>
 
-                <button
-                  onClick={exportToJSON}
-                  className="px-3 py-2 text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition flex items-center gap-2"
-                >
-                  <FileCode2 className="w-4 h-4 text-amber-400" />
-                  JSON
-                </button>
-              </div>
-            )}
+                  <button
+                    onClick={exportToCSV}
+                    className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition flex items-center gap-2 shadow-lg shadow-emerald-600/20"
+                  >
+                    <Download className="w-4 h-4" />
+                    CSV İndir
+                  </button>
+
+                  <button
+                    onClick={exportToJSON}
+                    className="px-3 py-2 text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl transition flex items-center gap-2"
+                  >
+                    <FileCode2 className="w-4 h-4 text-amber-400" />
+                    JSON
+                  </button>
+                </>
+              )}
+            </div>
           </header>
 
           <main className="w-full max-w-6xl space-y-6">

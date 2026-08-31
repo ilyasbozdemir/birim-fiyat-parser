@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -27,27 +27,68 @@ function createWindow() {
     ? 'http://127.0.0.1:3000'
     : `file://${path.join(__dirname, '../dist/index.html')}`;
 
-  console.log(`[Main] Uygulama yükleniyor: ${startUrl} (isDev: ${isDev})`);
+  console.log(`[Main] Uygulama yükleniyor: ${startUrl}`);
   mainWindow.loadURL(startUrl);
 
-  // F12 ve Ctrl+Shift+I ile DevTools açıp kapatabilme
+  // Pencere yüklendiğinde DevTools'u aç
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.openDevTools({ mode: 'right' });
+  });
+
+  // Klavye olayları (F12 & Ctrl+Shift+I)
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
-      mainWindow.webContents.toggleDevTools();
-      event.preventDefault();
+    if (input.type === 'keyDown') {
+      if (input.key === 'F12' || input.code === 'F12' || 
+         ((input.control || input.meta) && input.shift && (input.key.toLowerCase() === 'i' || input.code === 'KeyI'))) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+      }
     }
   });
 
-  // DevTools'u otomatik aç
-  mainWindow.webContents.openDevTools();
+  // Global Kısayollar
+  mainWindow.on('focus', () => {
+    try {
+      globalShortcut.register('F12', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.toggleDevTools();
+        }
+      });
+      globalShortcut.register('CommandOrControl+Shift+I', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.toggleDevTools();
+        }
+      });
+    } catch (e) {}
+  });
+
+  mainWindow.on('blur', () => {
+    try {
+      globalShortcut.unregister('F12');
+      globalShortcut.unregister('CommandOrControl+Shift+I');
+    } catch (e) {}
+  });
 }
 
 app.on('ready', createWindow);
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// DevTools Toggle IPC
+ipcMain.handle('toggle-devtools', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.toggleDevTools();
+    return true;
+  }
+  return false;
 });
 
 // PDF Dosya Seçimi Dialog
@@ -92,14 +133,11 @@ function runPythonExtractor(pdfPath) {
 
     python.stderr.on('data', (data) => {
       errorOutput += data.toString();
+      console.warn('[Python Stderr]:', data.toString());
     });
 
     python.on('close', (code) => {
       console.log(`[Python Exited] Code: ${code}`);
-      if (errorOutput) {
-        console.warn(`[Python Stderr]:`, errorOutput);
-      }
-      console.log(`[Python Stdout]:`, output);
 
       if (code !== 0 && !output) {
         resolve({ 
