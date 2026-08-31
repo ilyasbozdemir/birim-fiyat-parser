@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -29,7 +30,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install Python Dependencies
@@ -52,4 +53,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           Start-Sleep -Seconds 5
-          gh release edit ${{ github.ref_name }} --draft=false --latest
+          if ("${{ github.ref_name }}".StartsWith("v")) {
+            gh release edit ${{ github.ref_name }} --draft=false --latest
+          }
