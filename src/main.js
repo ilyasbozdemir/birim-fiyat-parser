@@ -120,13 +120,13 @@ function runPythonExtractor(pdfPath) {
       }
     });
 
-    // 45 saniye zaman aşımı
+    // 5 dakika zaman aşımı (büyük bakanlık kitapları için)
     setTimeout(() => {
       try {
         python.kill();
       } catch (err) {}
-      resolve({ error: 'İşlem zaman aşımına uğradı (45s).', success: false });
-    }, 45000);
+      resolve({ error: 'İşlem zaman aşımına uğradı (5 dk aşıldı). Lütfen PDF dosyasını kontrol edin.', success: false });
+    }, 300000);
   });
 }
 
