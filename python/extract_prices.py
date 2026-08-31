@@ -25,16 +25,57 @@ def normalize_price(price_str):
     cleaned = re.sub(r'[^\d,\.]', '', cleaned)
     return cleaned
 
-# Poz No tespiti: 15.120.1001, Y.15.001/2B, 10.100.1001/1, 04.001/01, KGM/15.001, MSB.101 vb.
+# Poz No tespiti: 10.200.3051, 15.120.1001, Y.15.001/2B, 10.100.1001/1, 04.001/01, KGM/15.001, MSB.101, vb.
 POZ_REGEX = re.compile(r'^([0-9]{2,3}\.[0-9a-zA-Z\.\-\/]+|[A-ZÇĞİÖŞÜa-z]{1,10}[\.\/\-][0-9a-zA-Z\.\-\/]+)')
-# Birim tespiti
-UNIT_REGEX = re.compile(r'\b(adet|ad\.|ad|m2|m²|m3|m³|m|mt|mt\.|kg|ton|ton\.|saat|gün|takım|tk|tk\.|lt|lt\.|kwh|ay|sefer|dm3|ha)\b', re.IGNORECASE)
-# Fiyat tespiti (satır sonundaki sayı)
+
+# Birim tespiti: m, m2, m3, kg, ton, adet, takım, saat vb.
+UNIT_REGEX = re.compile(r'\b(adet|ad\.|ad|m2|m²|m3|m³|m|mt|mt\.|kg|ton|ton\.|saat|gün|takım|tk|tk\.|lt|lt\.|kwh|ay|sefer|dm3|ha|dakika|dk)\b', re.IGNORECASE)
+
+# Satın Alma Yeri tespiti (Rayiç cetvelleri için: İşbaşında, Ocakta, Fabrikada, İşyerinde vb.)
+SATIN_ALMA_REGEX = re.compile(r'\b(işbaşında|işyerinde|ocakta|fabrikada|şantiyede|depoda|piyasada|ocak başında|teslim yeri)\b', re.IGNORECASE)
+
+# Fiyat tespiti (satır sonundaki sayı: örn 15,50 veya 1.250,00)
 PRICE_REGEX = re.compile(r'([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2}|[0-9]+,[0-9]{2}|[0-9]+(?:\.[0-9]{2})?)\s*$')
+
+# Bölüm / Grup Başlıkları (örn: 10.130.-Malzeme Rayiçleri, 1- Alüminyum, metal asma tavanlar için vb.)
+CATEGORY_REGEX = re.compile(r'^(\d{2}\.\d{3}\.\-[^\n\r]+|\d+\-\s+[A-ZÇĞİÖŞÜa-z\s\,\(\)]+|BÖLÜM\s+\d+.*|KISIM\s+\d+.*)', re.IGNORECASE)
+
+def parse_line_components(text_line):
+    """
+    Bir satırdan fiyat, satın alma yeri, birim ve tanımı ayrıştırır.
+    """
+    fiyat = ""
+    satin_alma = ""
+    birim = ""
+    tanim = text_line
+
+    # 1. Fiyat bul (Satır sonu)
+    p_match = PRICE_REGEX.search(tanim)
+    if p_match:
+        fiyat = p_match.group(1)
+        tanim = tanim[:p_match.start()].strip()
+
+    # 2. Satın Alma Yeri bul (İşbaşında, Ocakta vb.)
+    sa_match = SATIN_ALMA_REGEX.search(tanim)
+    if sa_match:
+        satin_alma = sa_match.group(1).capitalize()
+        # Satın alma yerini tanımdan çıkar
+        tanim = tanim[:sa_match.start()].strip() + " " + tanim[sa_match.end():].strip()
+        tanim = clean_text(tanim)
+
+    # 3. Birim bul
+    u_match = UNIT_REGEX.search(tanim)
+    if u_match:
+        birim = u_match.group(1)
+        # Birimi tanımdan temizle
+        tanim = tanim[:u_match.start()].strip() + " " + tanim[u_match.end():].strip()
+        tanim = clean_text(tanim)
+
+    return clean_text(tanim), clean_text(birim), clean_text(satin_alma), normalize_price(fiyat)
 
 def extract_with_pdfium_fast(pdf_path):
     """
-    pypdfium2 (C++ Chromium PDF engine) ile 700+ sayfayı 1-2 saniyede ultra hızlı tarar.
+    pypdfium2 ile hem standart birim fiyat hem de rayiç tablolarını ultra hızlı tarar.
     """
     import pypdfium2 as pdfium
     
@@ -44,6 +85,7 @@ def extract_with_pdfium_fast(pdf_path):
     print(f"[PDF Engine] pypdfium2 devrede. Toplam sayfa: {total_pages}", file=sys.stderr)
 
     current_item = None
+    current_category = ""
 
     for page_idx in range(total_pages):
         if (page_idx + 1) % 50 == 0 or page_idx == total_pages - 1:
@@ -63,73 +105,58 @@ def extract_with_pdfium_fast(pdf_path):
                 continue
 
             lower_line = line.lower()
-            # Başlık ve sayfa altı / üstü ibarelerini atla
-            if "bölüm" in lower_line and "poz" in lower_line:
+            # Başlık satırları
+            if lower_line.startswith("poz no") or ("tanımı" in lower_line and "ölçü" in lower_line):
                 continue
             if "sayfa" in lower_line and len(line) < 15:
                 continue
-            if "birim fiyat cetveli" in lower_line or "t.c. çevre" in lower_line:
+            if "t.c. çevre" in lower_line or "birim fiyat cetveli" in lower_line:
+                continue
+            if re.match(r'^\d{2}\.\d{2}\.\d{4}$', line):  # Sadece tarih satırları örn 01.01.2026
+                continue
+
+            # Alt grup / Bölüm başlığı tespiti (Örn: 10.130.-Malzeme Rayiçleri veya 1- Alüminyum asma tavan)
+            if CATEGORY_REGEX.match(line) and not POZ_REGEX.match(line):
+                current_category = line
                 continue
 
             poz_match = POZ_REGEX.match(line)
             if poz_match:
-                # Önceki yarım kalan pozu kaydet
+                # Önceki pozu listeye ekle
                 if current_item and current_item.get("pozNo"):
                     data.append(current_item)
                     current_item = None
 
                 poz_no = poz_match.group(1).strip()
-                # Poz no başlık ise atla
                 if poz_no.lower() in ["poz no", "poz no.", "sıra no", "s.no", "no"]:
                     continue
 
                 rest = line[len(poz_no):].strip()
-
-                price_match = PRICE_REGEX.search(rest)
-                fiyat = ""
-                tanim_birim = rest
-                if price_match:
-                    fiyat = price_match.group(1)
-                    tanim_birim = rest[:price_match.start()].strip()
-
-                unit_match = UNIT_REGEX.search(tanim_birim)
-                birim = "Adet"
-                tanim = tanim_birim
-                if unit_match:
-                    birim = unit_match.group(1)
-                    tanim = tanim_birim[:unit_match.start()].strip() + " " + tanim_birim[unit_match.end():].strip()
+                tanim, birim, satin_alma, fiyat = parse_line_components(rest)
 
                 current_item = {
                     "id": len(data) + 1,
                     "pozNo": clean_text(poz_no),
-                    "tanim": clean_text(tanim),
-                    "birim": clean_text(birim) or "Adet",
-                    "fiyat": normalize_price(fiyat),
+                    "tanim": tanim,
+                    "birim": birim or "Adet",
+                    "satinAlmaYeri": satin_alma,
+                    "fiyat": fiyat,
+                    "kategori": current_category,
                     "sayfa": page_idx + 1
                 }
             elif current_item:
-                # Çok satırlı açıklama devamı
-                price_match = PRICE_REGEX.search(line)
-                if price_match and not current_item.get("fiyat"):
-                    current_item["fiyat"] = normalize_price(price_match.group(1))
-                    remaining = line[:price_match.start()].strip()
-                    unit_match = UNIT_REGEX.search(remaining)
-                    if unit_match and current_item.get("birim") == "Adet":
-                        current_item["birim"] = clean_text(unit_match.group(1))
-                        remaining = remaining[:unit_match.start()].strip() + " " + remaining[unit_match.end():].strip()
-                    if remaining:
-                        current_item["tanim"] += " " + clean_text(remaining)
-                else:
-                    # Açıklamaya ekle
-                    unit_match = UNIT_REGEX.search(line)
-                    if unit_match and current_item.get("birim") == "Adet" and not current_item.get("fiyat"):
-                        current_item["birim"] = clean_text(unit_match.group(1))
-                        cleaned_line = line[:unit_match.start()].strip() + " " + line[unit_match.end():].strip()
-                        if cleaned_line:
-                            current_item["tanim"] += " " + clean_text(cleaned_line)
-                    else:
-                        if len(current_item["tanim"]) < 500:
-                            current_item["tanim"] += " " + line
+                # Çok satırlı açıklama veya fiyat devamı
+                c_tanim, c_birim, c_satin_alma, c_fiyat = parse_line_components(line)
+
+                if c_fiyat and not current_item.get("fiyat"):
+                    current_item["fiyat"] = c_fiyat
+                if c_satin_alma and not current_item.get("satinAlmaYeri"):
+                    current_item["satinAlmaYeri"] = c_satin_alma
+                if c_birim and current_item.get("birim") in ["Adet", ""]:
+                    current_item["birim"] = c_birim
+                if c_tanim:
+                    if len(current_item["tanim"]) < 600:
+                        current_item["tanim"] += " " + c_tanim
 
     if current_item and current_item.get("pozNo"):
         data.append(current_item)
@@ -153,16 +180,33 @@ def extract_with_pdfplumber(pdf_path):
                             continue
                         if clean_row[0].lower() in ["poz no", "poz no.", "sıra no", "no"]:
                             continue
+
                         poz_no = clean_row[0]
                         tanim = clean_row[1] if len(clean_row) > 1 else ""
-                        birim = clean_row[2] if len(clean_row) > 2 else "Adet"
-                        fiyat = clean_row[3] if len(clean_row) > 3 else ""
+                        birim = "Adet"
+                        satin_alma = ""
+                        fiyat = ""
+
+                        if len(clean_row) >= 5:
+                            # Rayiç tablosu: [Poz No, Tanım, Ölçü Birimi, Satın Alma Yeri, Rayiç Fiyatı]
+                            birim = clean_row[2]
+                            satin_alma = clean_row[3]
+                            fiyat = clean_row[4]
+                        elif len(clean_row) == 4:
+                            # Standart tablo: [Poz No, Tanım, Birim, Fiyat]
+                            birim = clean_row[2]
+                            fiyat = clean_row[3]
+                        elif len(clean_row) == 3:
+                            birim = clean_row[2]
+                            fiyat = clean_row[2]
+
                         if poz_no:
                             data.append({
                                 "id": len(data) + 1,
                                 "pozNo": clean_text(poz_no),
                                 "tanim": clean_text(tanim),
                                 "birim": clean_text(birim) or "Adet",
+                                "satinAlmaYeri": clean_text(satin_alma),
                                 "fiyat": normalize_price(fiyat),
                                 "sayfa": page_idx + 1
                             })
@@ -180,13 +224,13 @@ def extract_prices(pdf_path):
         try:
             data, total_pages = extract_with_pdfium_fast(pdf_path)
             if data and len(data) > 0:
-                print(f"[Başarılı] pypdfium2 ile {len(data)} poz çıkarıldı.", file=sys.stderr)
+                print(f"[Başarılı] pypdfium2 ile {len(data)} poz/rayiç çıkarıldı.", file=sys.stderr)
                 return {
                     "success": True,
                     "data": data,
                     "rowCount": len(data),
                     "tableCount": total_pages,
-                    "message": f"{len(data)} poz kalemi ({total_pages} sayfadan) başarıyla ayrıştırıldı."
+                    "message": f"{len(data)} poz ve rayiç kalemi ({total_pages} sayfadan) başarıyla ayrıştırıldı."
                 }
         except Exception as e:
             print(f"[pdfium warning]: {str(e)}", file=sys.stderr)
@@ -195,7 +239,7 @@ def extract_prices(pdf_path):
         try:
             data, total_pages = extract_with_pdfplumber(pdf_path)
             if data and len(data) > 0:
-                print(f"[Başarılı] pdfplumber ile {len(data)} poz çıkarıldı.", file=sys.stderr)
+                print(f"[Başarılı] pdfplumber ile {len(data)} poz/rayiç çıkarıldı.", file=sys.stderr)
                 return {
                     "success": True,
                     "data": data,
@@ -207,7 +251,7 @@ def extract_prices(pdf_path):
             print(f"[pdfplumber warning]: {str(e)}", file=sys.stderr)
 
         return {
-            "error": "PDF belgesinde okunabilir birim fiyat tablosu veya poz kalemleri bulunamadı.",
+            "error": "PDF belgesinde okunabilir birim fiyat veya rayiç tablosu bulunamadı.",
             "success": False
         }
 
@@ -227,6 +271,6 @@ if __name__ == "__main__":
 
     pdf_path = sys.argv[1]
     result = extract_prices(pdf_path)
-    # Binary UTF-8 yazımı ile Windows cp1254 encoding çökmesini engelle
+    # Binary UTF-8 çıktısı
     sys.stdout.buffer.write(json.dumps(result, ensure_ascii=False, indent=2).encode('utf-8'))
     sys.stdout.buffer.flush()

@@ -23,7 +23,9 @@ import {
   Table as TableIcon,
   Layers,
   Check,
-  Terminal
+  Terminal,
+  MapPin,
+  Tag
 } from 'lucide-react';
 
 export default function App() {
@@ -110,7 +112,6 @@ export default function App() {
     setSourceName(file.name);
 
     try {
-      // Electron'da file.path tam dosya yolunu verir
       const filePath = file.path;
       if (!filePath) {
         throw new Error('Dosya yolu okunamadı. Lütfen "PDF Seç" butonunu kullanın.');
@@ -176,6 +177,11 @@ export default function App() {
     }
   };
 
+  // Tabloda Satın Alma Yeri (Rayiç) var mı?
+  const hasSatinAlmaYeri = useMemo(() => {
+    return data && data.some(d => d.satinAlmaYeri && d.satinAlmaYeri.trim() !== '');
+  }, [data]);
+
   // Tablo Filtreleme ve Sıralama
   const filteredAndSortedData = useMemo(() => {
     if (!data) return [];
@@ -187,6 +193,8 @@ export default function App() {
         (item.pozNo && item.pozNo.toLowerCase().includes(term)) ||
         (item.tanim && item.tanim.toLowerCase().includes(term)) ||
         (item.birim && item.birim.toLowerCase().includes(term)) ||
+        (item.satinAlmaYeri && item.satinAlmaYeri.toLowerCase().includes(term)) ||
+        (item.kategori && item.kategori.toLowerCase().includes(term)) ||
         (item.fiyat && item.fiyat.toLowerCase().includes(term))
       );
     });
@@ -228,9 +236,20 @@ export default function App() {
   const exportToCSV = () => {
     if (!data || data.length === 0) return;
     
+    const headers = ['Poz No', 'Tanım', 'Birim'];
+    if (hasSatinAlmaYeri) headers.push('Satın Alma Yeri');
+    headers.push('Fiyat (TL)');
+    headers.push('Kategori / Bölüm');
+
     const csvContent = [
-      ['Poz No', 'Tanım', 'Birim', 'Fiyat (TL)'],
-      ...data.map(row => [row.pozNo || '', row.tanim || '', row.birim || '', row.fiyat || ''])
+      headers,
+      ...data.map(row => {
+        const r = [row.pozNo || '', row.tanim || '', row.birim || ''];
+        if (hasSatinAlmaYeri) r.push(row.satinAlmaYeri || '');
+        r.push(row.fiyat || '');
+        r.push(row.kategori || '');
+        return r;
+      })
     ]
     .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     .join('\n');
@@ -261,9 +280,18 @@ export default function App() {
   // Panoya Kopyala (Excel Uygun TSV)
   const copyToClipboard = () => {
     if (!data || data.length === 0) return;
+    const headers = ['Poz No', 'Tanım', 'Birim'];
+    if (hasSatinAlmaYeri) headers.push('Satın Alma Yeri');
+    headers.push('Fiyat (TL)');
+
     const tsv = [
-      ['Poz No', 'Tanım', 'Birim', 'Fiyat (TL)'].join('\t'),
-      ...data.map(row => [row.pozNo || '', row.tanim || '', row.birim || '', row.fiyat || ''].join('\t'))
+      headers.join('\t'),
+      ...data.map(row => {
+        const r = [row.pozNo || '', row.tanim || '', row.birim || ''];
+        if (hasSatinAlmaYeri) r.push(row.satinAlmaYeri || '');
+        r.push(row.fiyat || '');
+        return r.join('\t');
+      })
     ].join('\n');
 
     navigator.clipboard.writeText(tsv);
@@ -283,10 +311,10 @@ export default function App() {
               </div>
               <div>
                 <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white via-indigo-200 to-purple-400">
-                  Birim Fiyat Parser <span className="text-xs uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Pro</span>
+                  Birim Fiyat & Rayiç Parser <span className="text-xs uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Pro</span>
                 </h1>
                 <p className="text-sm text-slate-400">
-                  PDF & Web URL birim fiyat tablolarını saniyeler içinde parse edin ve dışa aktarın
+                  Kamu & Bakanlık Birim Fiyat ve Malzeme/İşçilik Rayiç tablolarını anında parse edin
                 </p>
               </div>
             </div>
@@ -382,7 +410,7 @@ export default function App() {
                       {isDragging ? 'PDF dosyasını buraya bırakın!' : 'PDF dosyanızı seçin veya buraya sürükleyin'}
                     </h3>
                     <p className="text-sm text-slate-400 max-w-md mb-6">
-                      Bakanlık, kamu ihale veya özel birim fiyat cetveli PDF belgelerini anında tarayın
+                      Bakanlık, Kamu İhale, Yapı Birim Fiyat veya Malzeme/İşçilik Rayiç PDF belgelerini anında tarayın
                     </p>
 
                     <button
@@ -422,7 +450,7 @@ export default function App() {
                           required
                           value={pdfUrl}
                           onChange={(e) => setPdfUrl(e.target.value)}
-                          placeholder="https://ornek.gov.tr/fiyat-listesi-2024.pdf"
+                          placeholder="https://ornek.gov.tr/fiyat-listesi-2026.pdf"
                           className="w-full pl-10 pr-4 py-3 bg-slate-950/60 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition text-sm"
                         />
                       </div>
@@ -459,7 +487,7 @@ export default function App() {
                   {data && (
                     <span className="text-emerald-400 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      Ayrıştırma Tamamlandı
+                      Ayrıştırma Tamamlandı ({data.length} Kalem)
                     </span>
                   )}
                 </div>
@@ -485,7 +513,7 @@ export default function App() {
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-white">{data.length}</div>
-                    <div className="text-xs text-slate-400">Toplam Poz Kalemi</div>
+                    <div className="text-xs text-slate-400">Toplam Poz / Rayiç Kalemi</div>
                   </div>
                 </div>
 
@@ -507,7 +535,7 @@ export default function App() {
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-white">{meta?.tableCount || 1}</div>
-                    <div className="text-xs text-slate-400">Taranan Tablo Sayısı</div>
+                    <div className="text-xs text-slate-400">Taranan Sayfa Sayısı</div>
                   </div>
                 </div>
               </div>
@@ -527,7 +555,7 @@ export default function App() {
                       type="text"
                       value={searchTerm}
                       onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                      placeholder="Poz no veya açıklamada ara..."
+                      placeholder="Poz no, açıklama, rayiç veya kategori ara..."
                       className="w-full pl-10 pr-4 py-2 bg-slate-950/60 border border-slate-700/80 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
                     />
                     {searchTerm && (
@@ -574,16 +602,27 @@ export default function App() {
                           className="py-3.5 px-4 w-28 cursor-pointer hover:text-indigo-400 transition text-center"
                         >
                           <div className="flex items-center justify-center gap-1.5">
-                            Birim
+                            Ölçü Birimi
                             <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
                           </div>
                         </th>
+                        {hasSatinAlmaYeri && (
+                          <th 
+                            onClick={() => handleSort('satinAlmaYeri')}
+                            className="py-3.5 px-4 w-32 cursor-pointer hover:text-indigo-400 transition text-center"
+                          >
+                            <div className="flex items-center justify-center gap-1.5">
+                              Satın Alma Yeri
+                              <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+                            </div>
+                          </th>
+                        )}
                         <th 
                           onClick={() => handleSort('fiyat')}
                           className="py-3.5 px-4 w-36 cursor-pointer hover:text-indigo-400 transition text-right"
                         >
                           <div className="flex items-center justify-end gap-1.5">
-                            Birim Fiyat (TL)
+                            Fiyat (TL)
                             <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
                           </div>
                         </th>
@@ -593,7 +632,7 @@ export default function App() {
                     <tbody className="divide-y divide-slate-800/60">
                       {paginatedData.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="text-center py-12 text-slate-500">
+                          <td colSpan={hasSatinAlmaYeri ? 7 : 6} className="text-center py-12 text-slate-500">
                             Arama kriterinize uygun birim fiyat bulunamadı.
                           </td>
                         </tr>
@@ -610,14 +649,32 @@ export default function App() {
                             <td className="py-3 px-4 font-mono font-medium text-indigo-300">
                               {row.pozNo || '-'}
                             </td>
-                            <td className="py-3 px-4 text-slate-200 line-clamp-2 max-w-md">
-                              {row.tanim || '-'}
+                            <td className="py-3 px-4 text-slate-200 max-w-md">
+                              <div className="line-clamp-2">{row.tanim || '-'}</div>
+                              {row.kategori && (
+                                <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                  <Tag className="w-3 h-3 text-slate-600 shrink-0" />
+                                  <span className="truncate">{row.kategori}</span>
+                                </div>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-center">
                               <span className="inline-block px-2.5 py-0.5 text-xs font-semibold rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
                                 {row.birim || 'Adet'}
                               </span>
                             </td>
+                            {hasSatinAlmaYeri && (
+                              <td className="py-3 px-4 text-center">
+                                {row.satinAlmaYeri ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                                    <MapPin className="w-3 h-3" />
+                                    {row.satinAlmaYeri}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-600">-</span>
+                                )}
+                              </td>
+                            )}
                             <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-400">
                               {row.fiyat ? `${row.fiyat} ₺` : '-'}
                             </td>
@@ -626,7 +683,7 @@ export default function App() {
                                 <Tooltip.Trigger asChild>
                                   <button
                                     onClick={() => {
-                                      navigator.clipboard.writeText(`${row.pozNo}\t${row.tanim}\t${row.birim}\t${row.fiyat}`);
+                                      navigator.clipboard.writeText(`${row.pozNo}\t${row.tanim}\t${row.birim}\t${row.satinAlmaYeri || ''}\t${row.fiyat}`);
                                       triggerToast(`${row.pozNo || 'Kalem'} kopyalandı.`);
                                     }}
                                     className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition"
@@ -685,7 +742,7 @@ export default function App() {
                 <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
                   <Dialog.Title className="text-lg font-bold text-white flex items-center gap-2">
                     <FileText className="w-5 h-5 text-indigo-400" />
-                    Poz Kalem Detayı
+                    Poz / Rayiç Kalem Detayı
                   </Dialog.Title>
                   <Dialog.Close className="text-slate-400 hover:text-white p-1 rounded-lg">
                     <X className="w-5 h-5" />
@@ -694,8 +751,15 @@ export default function App() {
 
                 {selectedItem && (
                   <div className="space-y-4 text-sm">
+                    {selectedItem.kategori && (
+                      <div className="bg-indigo-500/10 border border-indigo-500/20 px-3 py-2 rounded-xl text-xs text-indigo-300 flex items-center gap-1.5">
+                        <Tag className="w-3.5 h-3.5 shrink-0" />
+                        <span className="font-medium">{selectedItem.kategori}</span>
+                      </div>
+                    )}
+
                     <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
-                      <div className="text-xs text-slate-400 mb-1">Poz Numarası</div>
+                      <div className="text-xs text-slate-400 mb-1">Poz / Rayiç Numarası</div>
                       <div className="text-lg font-mono font-bold text-indigo-300">
                         {selectedItem.pozNo || 'Belirtilmemiş'}
                       </div>
@@ -710,24 +774,34 @@ export default function App() {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
-                        <div className="text-xs text-slate-400 mb-1">Birim</div>
+                        <div className="text-xs text-slate-400 mb-1">Ölçü Birimi</div>
                         <div className="font-semibold text-slate-200">
                           {selectedItem.birim || 'Adet'}
                         </div>
                       </div>
 
                       <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
-                        <div className="text-xs text-slate-400 mb-1">Birim Fiyat</div>
-                        <div className="text-lg font-mono font-bold text-emerald-400">
-                          {selectedItem.fiyat ? `${selectedItem.fiyat} ₺` : 'Fiyat Yok'}
+                        <div className="text-xs text-slate-400 mb-1">Satın Alma Yeri</div>
+                        <div className="font-semibold text-amber-300">
+                          {selectedItem.satinAlmaYeri || 'İşbaşında / Standart'}
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 flex items-center justify-between">
+                      <div>
+                        <div className="text-xs text-slate-400">Rayiç / Birim Fiyat</div>
+                        <div className="text-xs text-slate-500">Sayfa {selectedItem.sayfa || 1}</div>
+                      </div>
+                      <div className="text-xl font-mono font-bold text-emerald-400">
+                        {selectedItem.fiyat ? `${selectedItem.fiyat} ₺` : 'Fiyat Yok'}
                       </div>
                     </div>
 
                     <div className="pt-2 flex justify-end gap-2">
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText(`${selectedItem.pozNo}\t${selectedItem.tanim}\t${selectedItem.birim}\t${selectedItem.fiyat}`);
+                          navigator.clipboard.writeText(`${selectedItem.pozNo}\t${selectedItem.tanim}\t${selectedItem.birim}\t${selectedItem.satinAlmaYeri || ''}\t${selectedItem.fiyat}`);
                           triggerToast('Detay panoya kopyalandı.');
                           setIsDialogOpen(false);
                         }}
