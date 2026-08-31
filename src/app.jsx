@@ -153,14 +153,18 @@ export default function App() {
   };
 
   const handleParseResult = (result, name) => {
+    console.log('[API Result]:', result);
     if (!result) {
+      console.error('[API Error]: Boş yanıt döndü');
       setError('Sonuç alınamadı.');
       return;
     }
     if (result.error || !result.success) {
+      console.error('[API Extract Error]:', result.error);
       setError(result.error || 'Ayrıştırma başarısız oldu.');
       setData(null);
     } else {
+      console.log(`[API Extract Success]: ${result.data?.length} satır verisi`, result.data);
       setData(result.data || []);
       setMeta({
         rowCount: result.rowCount || (result.data ? result.data.length : 0),
