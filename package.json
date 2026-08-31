@@ -5,8 +5,11 @@
   "main": "src/main.js",
   "homepage": "./",
   "author": "İlyas Bozdemir",
-  "license": "MIT",
+  "bin": {
+    "birim-fiyat-parser": "./bin/cli.js"
+  },
   "scripts": {
+    "cli": "node ./bin/cli.js",
     "dev": "concurrently -k \"pnpm run vite\" \"wait-on tcp:127.0.0.1:3000 && electron .\"",
     "start": "concurrently -k \"pnpm run vite\" \"wait-on tcp:127.0.0.1:3000 && electron .\"",
     "vite": "vite",
